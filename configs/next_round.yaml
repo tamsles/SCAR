@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "minimum_meaningful_accuracy_gain_pp": 1.0,
+  "methods": [
+    "no_iw",
+    "pooled_scar",
+    "adiw",
+    "unified",
+    "multihead",
+    "fusion",
+    "separate_full",
+    "separate_matched_capacity"
+  ],
+  "common": {
+    "dataset": "mnist",
+    "shift": "rotation",
+    "target_rotation": 30,
+    "target_weak_size": 1000,
+    "source_size": 0,
+    "batch_size": 256,
+    "workers": 0,
+    "ratio_learning_rate": 0.001,
+    "classifier_learning_rate": 0.001,
+    "weight_decay": 0.00001,
+    "ratio_clip": [0.01, 20.0],
+    "normalization": "conditional_branch",
+    "fusion_gate_init": 0.5,
+    "ratio_validation_fraction": 0.2,
+    "diagnostic_max_samples": 4096
+  },
+  "experiment_modes": {
+    "smoke": {
+      "ratio_epochs": 1,
+      "classifier_epochs": 2,
+      "seeds": [0]
+    },
+    "diagnostic": {
+      "ratio_epochs": 10,
+      "classifier_epochs": 200,
+      "seeds": [0, 1, 2, 3, 4]
+    },
+    "full": {
+      "ratio_epochs": 10,
+      "classifier_epochs": 200,
+      "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    }
+  },
+  "phases": {
+    "smoke": {
+      "datasets": ["mnist"],
+      "shifts": ["rotation"],
+      "rotations": [20],
+      "target_weak_sizes": [1000],
+      "methods": ["no_iw", "pooled_scar", "adiw", "unified", "multihead", "fusion"],
+      "clips": [[0.01, 20.0]],
+      "normalizations": ["conditional_branch"],
+      "fusion_gate_inits": [0.5],
+      "seeds": [0]
+    },
+    "A1": {
+      "datasets": ["mnist"],
+      "shifts": ["rotation"],
+      "rotations": [30, 10, 20],
+      "target_weak_sizes": [1000],
+      "methods": ["no_iw", "pooled_scar", "adiw", "unified", "multihead", "fusion"],
+      "clips": [[0.01, 20.0]],
+      "normalizations": ["conditional_branch"],
+      "fusion_gate_inits": [0.5],
+      "seeds": [0, 1, 2, 3, 4]
+    },
+    "A0_separate_standard": {
+      "datasets": ["mnist"],
+      "shifts": ["rotation"],
+      "rotations": [30],
+      "target_weak_sizes": [1000],
+      "methods": ["separate_full"],
+      "clips": [[0.01, 20.0]],
+      "normalizations": ["conditional_branch"],
+      "fusion_gate_inits": [0.5],
+      "seeds": [0, 1, 2, 3, 4]
+    },
+    "A2": {
+      "datasets": ["mnist"],
+      "shifts": ["rotation"],
+      "rotations": [20],
+      "target_weak_sizes": [500, 1000, 5000],
+      "methods": ["no_iw", "pooled_scar", "adiw", "unified", "multihead", "fusion"],
+      "clips": [[0.01, 20.0]],
+      "normalizations": ["conditional_branch"],
+      "fusion_gate_inits": [0.5],
+      "seeds": [0, 1, 2, 3, 4]
+    },
+    "A3_smoke": {
+      "datasets": ["mnist"],
+      "shifts": ["rotation"],
+      "rotations": [20],
+      "target_weak_sizes": [1000],
+      "methods": ["adiw", "unified", "multihead", "fusion"],
+      "clips": [[0.01, 20.0], [0.05, 10.0], [0.1, 5.0], [0.001, 50.0]],
+      "normalizations": ["conditional_branch", "none"],
+      "fusion_gate_inits": [0.5],
+      "seeds": [0]
+    },
+    "A4_separate_control": {
+      "datasets": ["mnist"],
+      "shifts": ["rotation"],
+      "rotations": [20],
+      "target_weak_sizes": [1000],
+      "methods": ["multihead", "separate_full", "separate_matched_capacity"],
+      "clips": [[0.01, 20.0]],
+      "normalizations": ["conditional_branch"],
+      "fusion_gate_inits": [0.5],
+      "seeds": [0, 1, 2, 3, 4]
+    },
+    "A5_gate_init": {
+      "datasets": ["mnist"],
+      "shifts": ["rotation"],
+      "rotations": [20],
+      "target_weak_sizes": [1000],
+      "methods": ["fusion"],
+      "clips": [[0.01, 20.0]],
+      "normalizations": ["conditional_branch"],
+      "fusion_gate_inits": [0.2, 0.5, 0.8],
+      "seeds": [0, 1, 2, 3, 4]
+    },
+    "B_heterogeneous": {
+      "datasets": ["mnist", "fashionmnist"],
+      "shifts": ["heterogeneous"],
+      "rotations": [0],
+      "target_weak_sizes": [1000],
+      "methods": ["no_iw", "pooled_scar", "adiw", "unified", "multihead", "fusion"],
+      "clips": [[0.01, 20.0]],
+      "normalizations": ["conditional_branch"],
+      "fusion_gate_inits": [0.5],
+      "seeds": [0, 1, 2, 3, 4]
+    }
+  }
+}

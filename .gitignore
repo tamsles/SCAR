@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.venv/
+outputs/
+results/
+logs/
+*.out
+wisteria/generated/
+wisteria/generated_multigpu/
+wisteria/generated_next_round/
