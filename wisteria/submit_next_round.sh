@@ -35,7 +35,10 @@ fi
 
 total=$(
     "${PYTHON_BIN}" "${RUNNER}" \
-        --config "${CONFIG}" --phase "${PHASE}" --count
+        --config "${CONFIG}" \
+        --phase "${PHASE}" \
+        --experiment-mode "${EXPERIMENT_MODE}" \
+        --count
 )
 if [[ ! "${total}" =~ ^[0-9]+$ ]]; then
     echo "Could not determine task count: ${total}" >&2
