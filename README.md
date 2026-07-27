@@ -343,6 +343,42 @@ python scripts/summarize_next_round.py \
   --results results/next_round_phase_a
 ```
 
+### Next-Round Phase B
+
+Phase B reuses the matched runner and adds causal weight interventions,
+frozen-score post-processing, a ground-truth Gaussian benchmark, and
+class-specific MNIST rotations. List the formal matrices with:
+
+```bash
+python scripts/run_phase_b0.py --experiment-mode full --count  # 60 runs
+python scripts/run_phase_b1.py --experiment-mode full --count  # 20 audits
+python scripts/run_phase_b2.py --experiment-mode full --count  # 3 seeds / 45 grid runs
+python scripts/run_phase_b3.py --experiment-mode full --count  # 20 seeds / 400 runs
+python scripts/run_phase_b4.py --experiment-mode full --count  # 100 runs
+```
+
+All runners accept the Wisteria task interface. For example:
+
+```bash
+RUNNER=scripts/run_phase_b0.py \
+CONFIG=configs/phase_b/b0_adiw_causal/config.json \
+PHASE=B0 EXPERIMENT_MODE=full \
+RESULTS_ROOT=results/phase_b/B0 \
+bash wisteria/submit_next_round.sh
+```
+
+Validate, select the two B2 calibration candidates without target class
+labels, and build the stage reports with:
+
+```bash
+python scripts/analyze_phase_b.py \
+  --runs-root results/phase_b \
+  --output-root outputs/phase_b \
+  --select-b2
+```
+
+The audited code-path map is in `reports/phase_b_repository_audit.md`.
+
 ## Assumptions and limitations
 
 - Ratios are only identifiable for branches with both source and target

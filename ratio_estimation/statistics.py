@@ -67,6 +67,7 @@ def summarize_weight_values(
             "count": 0,
             "mean": None,
             "std": None,
+            "cv": None,
             "min": None,
             "max": None,
             "q01": None,
@@ -82,6 +83,7 @@ def summarize_weight_values(
             "log_ratio_mean": None,
             "log_ratio_std": None,
             "ess": 0.0,
+            "normalized_ess": 0.0,
             "mean_absolute_deviation_from_one": None,
             "raw_spearman": None,
             "normalization_scale_factor": None,
@@ -156,6 +158,11 @@ def summarize_weight_values(
         "count": int(values_float.numel()),
         "mean": float(finite_values.mean().item()),
         "std": float(finite_values.std(unbiased=False).item()),
+        "cv": float(
+            finite_values.std(unbiased=False).div(
+                finite_values.mean().abs().clamp_min(eps)
+            ).item()
+        ),
         "min": float(finite_values.min().item()),
         "max": float(finite_values.max().item()),
         "q01": float(quantiles[0].item()),
@@ -172,6 +179,9 @@ def summarize_weight_values(
         "log_ratio_mean": log_mean,
         "log_ratio_std": log_std,
         "ess": float(ess.item()),
+        "normalized_ess": float(
+            ess.div(float(max(finite_values.numel(), 1))).item()
+        ),
         "mean_absolute_deviation_from_one": float(
             (finite_values - 1.0).abs().mean().item()
         ),
@@ -197,8 +207,8 @@ def process_weight_stages(
     """Return separate raw, clipped, normalized, and used weight tensors."""
     if weights.ndim != 2:
         raise ValueError("weights must have shape [B,q]")
-    if min_weight <= 0 or max_weight < min_weight:
-        raise ValueError("invalid positive weight bounds")
+    if min_weight < 0 or max_weight <= 0 or max_weight < min_weight:
+        raise ValueError("invalid non-negative weight bounds")
     if eps <= 0:
         raise ValueError("eps must be positive")
     if normalization_scope not in NORMALIZATION_SCOPES:

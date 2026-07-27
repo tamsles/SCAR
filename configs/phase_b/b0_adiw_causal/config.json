@@ -1,0 +1,30 @@
+{
+  "experiment": "B0",
+  "dataset": "mnist",
+  "shift": "rotation",
+  "target_rotation": 30,
+  "target_weak_size": 1000,
+  "source_size": 0,
+  "methods": [
+    "current_no_iw",
+    "adiw_ones",
+    "adiw_mean",
+    "adiw_shuffle",
+    "adiw_original",
+    "matched_no_iw"
+  ],
+  "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  "batch_size": 256,
+  "workers": 0,
+  "ratio_epochs": 10,
+  "classifier_epochs": 200,
+  "smoke_classifier_epochs": 2,
+  "ratio_learning_rate": 0.001,
+  "classifier_learning_rate": 0.001,
+  "weight_decay": 0.00001,
+  "lower_clip": 0.01,
+  "upper_clip": 20.0,
+  "normalization": "conditional_branch",
+  "ratio_validation_fraction": 0.2,
+  "diagnostic_max_samples": 2048
+}

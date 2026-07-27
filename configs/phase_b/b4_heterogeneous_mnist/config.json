@@ -1,0 +1,35 @@
+{
+  "experiment": "B4",
+  "dataset": "mnist",
+  "target_weak_size": 1000,
+  "source_size": 0,
+  "settings": {
+    "H0_no_shift": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    "H1_homogeneous": [30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
+    "H2_magnitude_heterogeneous": [10, 10, 20, 20, 30, 30, 40, 40, 50, 50],
+    "H3_sparse_heterogeneous": [0, 0, 0, 0, 0, 60, 60, 60, 60, 60],
+    "H4_direction_heterogeneous": [30, 30, 30, 30, 30, -30, -30, -30, -30, -30]
+  },
+  "methods": [
+    "current_no_iw",
+    "adiw_original",
+    "unified",
+    "multihead"
+  ],
+  "seeds": [0, 1, 2, 3, 4],
+  "batch_size": 256,
+  "workers": 0,
+  "ratio_epochs": 10,
+  "classifier_epochs": 200,
+  "smoke_ratio_epochs": 1,
+  "smoke_classifier_epochs": 2,
+  "ratio_learning_rate": 0.001,
+  "classifier_learning_rate": 0.001,
+  "weight_decay": 0.00001,
+  "lower_clip": 0.01,
+  "upper_clip": 20.0,
+  "normalization": "conditional_branch",
+  "b2_preregistered_selection": null,
+  "ratio_validation_fraction": 0.2,
+  "diagnostic_max_samples": 2048
+}

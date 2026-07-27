@@ -41,12 +41,23 @@ from ratio_estimation import (
     summarize_weight_values,
     weight_stage_rows,
 )
+from src.weight_interventions import (
+    apply_weight_intervention,
+    classifier_method_contract,
+)
+from src.ratio_diagnostics import distribution_matching_diagnostics
 
 
 METHODS = (
     "no_iw",
+    "current_no_iw",
+    "matched_no_iw",
     "pooled_scar",
     "adiw",
+    "adiw_original",
+    "adiw_ones",
+    "adiw_mean",
+    "adiw_shuffle",
     "unified",
     "multihead",
     "fusion",
@@ -71,9 +82,26 @@ CSV_FILES = {
         "target_prediction_confidence",
         "target_ece",
         "target_nll",
+        "true_target_risk",
+        "estimated_weak_risk",
+        "estimated_iw_risk",
+        "source_risk_contribution",
+        "target_risk_contribution",
+        "total_loss_scale",
+        "classifier_gradient_norm",
+        "ratio_estimator_loss",
         "weight_mean",
         "weight_std",
+        "weight_cv",
+        "weight_min",
+        "weight_max",
+        "weight_q01",
+        "weight_q05",
+        "weight_q50",
+        "weight_q95",
+        "weight_q99",
         "weight_ess",
+        "normalized_ess",
     ],
     "branch_metrics.csv": [
         "epoch",
@@ -192,6 +220,13 @@ def _git_commit_hash(repository: str) -> Optional[str]:
         return None
 
 
+def _config_hash(config: Dict[str, Any]) -> str:
+    payload = json.dumps(
+        config, sort_keys=True, separators=(",", ":"), default=str
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def _hash_tensor(digest: Any, tensor: torch.Tensor) -> None:
     array = torch.as_tensor(tensor).detach().cpu().contiguous().numpy()
     digest.update(str(array.dtype).encode("ascii"))
@@ -236,8 +271,17 @@ class OrdinarySourceEvaluationView(Dataset):
 
 
 def _heterogeneous_transform(
-    image: torch.Tensor, label: int, transform_functional: Any
+    image: torch.Tensor,
+    label: int,
+    transform_functional: Any,
+    class_rotations: Optional[Sequence[float]] = None,
 ) -> torch.Tensor:
+    if class_rotations is not None:
+        if len(class_rotations) != 10:
+            raise ValueError("class_rotations must contain ten angles")
+        return transform_functional.rotate(
+            image, float(class_rotations[int(label)])
+        )
     if label <= 2:
         return transform_functional.rotate(image, 10.0)
     if label <= 5:
@@ -254,12 +298,22 @@ def _heterogeneous_transform(
 class HeterogeneousWeakDataset(Dataset):
     """Apply a fixed class-specific transform without returning labels."""
 
-    def __init__(self, weak_dataset: Dataset, transform_functional: Any) -> None:
+    def __init__(
+        self,
+        weak_dataset: Dataset,
+        transform_functional: Any,
+        class_rotations: Optional[Sequence[float]] = None,
+    ) -> None:
         self.base_dataset = weak_dataset.base_dataset
         self.base_indices = weak_dataset.base_indices
         self.complementary_vectors = weak_dataset.complementary_vectors
         self.rotation_degrees = 0.0
         self.transform_functional = transform_functional
+        self.class_rotations = (
+            None
+            if class_rotations is None
+            else tuple(float(value) for value in class_rotations)
+        )
 
     def __len__(self) -> int:
         return len(self.base_indices)
@@ -270,15 +324,28 @@ class HeterogeneousWeakDataset(Dataset):
         base_index = int(self.base_indices[local_index].item())
         image, label = self.base_dataset[base_index]
         image = _heterogeneous_transform(
-            image, int(label), self.transform_functional
+            image,
+            int(label),
+            self.transform_functional,
+            self.class_rotations,
         )
         return local_index, image, self.complementary_vectors[local_index]
 
 
 class HeterogeneousEvaluationDataset(Dataset):
-    def __init__(self, base_dataset: Dataset, transform_functional: Any) -> None:
+    def __init__(
+        self,
+        base_dataset: Dataset,
+        transform_functional: Any,
+        class_rotations: Optional[Sequence[float]] = None,
+    ) -> None:
         self.base_dataset = base_dataset
         self.transform_functional = transform_functional
+        self.class_rotations = (
+            None
+            if class_rotations is None
+            else tuple(float(value) for value in class_rotations)
+        )
 
     def __len__(self) -> int:
         return len(self.base_dataset)
@@ -287,7 +354,10 @@ class HeterogeneousEvaluationDataset(Dataset):
         image, label = self.base_dataset[index]
         return (
             _heterogeneous_transform(
-                image, int(label), self.transform_functional
+                image,
+                int(label),
+                self.transform_functional,
+                self.class_rotations,
             ),
             int(label),
         )
@@ -302,10 +372,14 @@ def prepare_matched_data(
     seed: int,
     shift: str,
     target_rotation: float,
+    class_rotations: Optional[Sequence[float]] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Build one paired split; ordinary labels only define controlled shifts."""
     domain_dataset = "fashion" if dataset == "fashionmnist" else dataset
-    base_shift = "none" if shift == "heterogeneous" else shift
+    controlled_class_shift = (
+        shift == "heterogeneous" or class_rotations is not None
+    )
+    base_shift = "none" if controlled_class_shift else shift
     original_directory = os.getcwd()
     os.chdir(scarce_repository)
     try:
@@ -324,16 +398,18 @@ def prepare_matched_data(
         )
     finally:
         os.chdir(original_directory)
-    if shift == "heterogeneous":
+    if controlled_class_shift:
         from torchvision.transforms import functional as transform_functional
 
         target = data["target_weak"]
         evaluation = data["target_evaluation"]
         data["target_weak"] = HeterogeneousWeakDataset(
-            target, transform_functional
+            target, transform_functional, class_rotations=class_rotations
         )
         data["target_evaluation"] = HeterogeneousEvaluationDataset(
-            evaluation.base_dataset, transform_functional
+            evaluation.base_dataset,
+            transform_functional,
+            class_rotations=class_rotations,
         )
     shift_spec = {
         "type": shift,
@@ -349,6 +425,11 @@ def prepare_matched_data(
         }
         if shift == "heterogeneous"
         else None,
+        "class_rotations": (
+            None
+            if class_rotations is None
+            else [float(value) for value in class_rotations]
+        ),
     }
     data["source_evaluation"] = OrdinarySourceEvaluationView(
         data["source_weak"]
@@ -1031,6 +1112,33 @@ def evaluate_classifier(
 
 
 @torch.no_grad()
+def collect_classifier_features(
+    dataset: Dataset,
+    classifier: nn.Module,
+    device: torch.device,
+    batch_size: int,
+    workers: int,
+    maximum: int,
+) -> torch.Tensor:
+    """Collect the reused SCARCE MLP hidden representation."""
+    loader = DataLoader(
+        Subset(dataset, list(range(min(len(dataset), maximum)))),
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=workers,
+    )
+    classifier.eval()
+    parts = []
+    for batch in loader:
+        images = batch[1].to(device)
+        flattened = images.reshape(images.shape[0], -1)
+        parts.append(
+            classifier.relu1(classifier.fc1(flattened)).detach().cpu()
+        )
+    return torch.cat(parts, dim=0)
+
+
+@torch.no_grad()
 def evaluate_weak_risk(
     modules: Dict[str, Any],
     dataset: Dataset,
@@ -1123,7 +1231,9 @@ def train_classifier(
     method: str,
     data: Dict[str, Any],
     device: torch.device,
-    seed: int,
+    model_seed: int,
+    batch_seed: int,
+    weight_shuffle_seed: int,
     batch_size: int,
     epochs: int,
     learning_rate: float,
@@ -1135,20 +1245,26 @@ def train_classifier(
     normalization: str,
 ) -> Dict[str, Any]:
     """Train without target-test-driven selection and record every epoch."""
-    set_random_seed(seed)
+    set_random_seed(model_seed)
     source_dataset = data["source_weak"]
     target_dataset = data["target_weak"]
+    source_generator = torch.Generator(device="cpu")
+    source_generator.manual_seed(int(batch_seed))
+    target_generator = torch.Generator(device="cpu")
+    target_generator.manual_seed(int(batch_seed) + 1)
     source_loader = DataLoader(
         source_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=workers,
+        generator=source_generator,
     )
     target_loader = DataLoader(
         target_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=workers,
+        generator=target_generator,
     )
     target_evaluation_loader = DataLoader(
         data["target_evaluation"],
@@ -1183,11 +1299,14 @@ def train_classifier(
     pooled_loader = None
     pooled_complement_prior = None
     if method == "pooled_scar":
+        pooled_generator = torch.Generator(device="cpu")
+        pooled_generator.manual_seed(int(batch_seed))
         pooled_loader = DataLoader(
             ConcatDataset((source_dataset, target_dataset)),
             batch_size=batch_size,
             shuffle=True,
             num_workers=workers,
+            generator=pooled_generator,
         )
         source_fraction = 1.0 - target_fraction
         pooled_complement_prior = (
@@ -1195,21 +1314,44 @@ def train_classifier(
             + target_fraction * target_complement_prior
         )
     weight_memory = None
-    if method == "adiw":
+    adiw_methods = (
+        "adiw",
+        "adiw_original",
+        "adiw_ones",
+        "adiw_mean",
+        "adiw_shuffle",
+    )
+    if method in adiw_methods:
         weight_memory = modules["adiw_scar"].BranchWeightMemory(
             len(source_dataset), num_classes, device
         )
+    shuffle_generator = torch.Generator(device="cpu")
+    shuffle_generator.manual_seed(int(weight_shuffle_seed))
+    classifier_used_cache = torch.ones(
+        len(source_dataset), num_classes, dtype=torch.float32
+    )
 
     epoch_rows = []
     per_class_rows = []
     classifier_weight_rows = []
+    final_raw_weight_summary = summarize_weight_values(
+        classifier_used_cache,
+        raw_reference=classifier_used_cache,
+        min_weight=ratio_clip_min,
+        max_weight=ratio_clip_max,
+    )
     target_iterator = iter(target_loader)
     start = time.perf_counter()
     for epoch in range(1, epochs + 1):
         classifier.train()
         total_loss = 0.0
         total_samples = 0
+        source_contribution_sum = 0.0
+        target_contribution_sum = 0.0
+        gradient_norm_sum = 0.0
+        ratio_loss_values = []
         epoch_raw_weights = []
+        epoch_used_weights = []
         epoch_complements = []
         training_loader = (
             pooled_loader if method == "pooled_scar" else source_loader
@@ -1219,14 +1361,16 @@ def train_classifier(
             images = images.to(device)
             complements = complements.to(device)
             optimizer.zero_grad()
-            if method in ("no_iw", "pooled_scar"):
+            if method in ("no_iw", "current_no_iw", "pooled_scar"):
                 outputs = classifier(images)
                 complement_prior = (
                     pooled_complement_prior
                     if method == "pooled_scar"
                     else source_complement_prior
                 )
-                loss, _ = modules["adiw_scar"].scar_branch_risk(
+                loss, risk_diagnostics = modules[
+                    "adiw_scar"
+                ].scar_branch_risk(
                     outputs,
                     complements,
                     uniform_prior,
@@ -1234,6 +1378,8 @@ def train_classifier(
                     branch_weights=None,
                     correction="abs",
                 )
+                source_contribution = loss
+                target_contribution = loss.new_zeros(())
             else:
                 target_batch, target_iterator = _next_batch(
                     target_loader, target_iterator
@@ -1243,16 +1389,18 @@ def train_classifier(
                 target_complements = target_complements.to(device)
                 source_outputs = classifier(images)
                 target_outputs = classifier(target_images)
-                if method == "adiw":
+                if method in adiw_methods:
+                    source_representation = modules[
+                        "adiw_scar"
+                    ].loss_value_representation(source_outputs.detach())
+                    target_representation = modules[
+                        "adiw_scar"
+                    ].loss_value_representation(target_outputs.detach())
                     raw_weights = weight_memory.estimate(
                         indices.to(device),
-                        modules["adiw_scar"].loss_value_representation(
-                            source_outputs.detach()
-                        ),
+                        source_representation,
                         complements,
-                        modules["adiw_scar"].loss_value_representation(
-                            target_outputs.detach()
-                        ),
+                        target_representation,
                         target_complements,
                         source_complement_prior,
                         target_complement_prior,
@@ -1261,6 +1409,61 @@ def train_classifier(
                         max_weight=50.0,
                         kernel_quantile=0.5,
                         sum_tolerance=None,
+                    )
+                    if not ratio_loss_values:
+                        branch_objectives = []
+                        for class_index in range(num_classes):
+                            for observed in (False, True):
+                                source_mask = (
+                                    complements[:, class_index] > 0.5
+                                ) == observed
+                                target_mask = (
+                                    target_complements[:, class_index] > 0.5
+                                ) == observed
+                                if not bool(source_mask.any().item()) or not bool(
+                                    target_mask.any().item()
+                                ):
+                                    continue
+                                source_values = source_representation[
+                                    source_mask, class_index
+                                ].reshape(-1, 1)
+                                target_values = target_representation[
+                                    target_mask, class_index
+                                ].reshape(-1, 1)
+                                branch_weights = raw_weights[
+                                    source_mask, class_index
+                                ]
+                                gamma = modules[
+                                    "adiw_scar"
+                                ].rbf_gamma_from_quantile(
+                                    source_values,
+                                    target_values,
+                                    quantile=0.5,
+                                )
+                                branch_objectives.append(
+                                    modules[
+                                        "adiw_scar"
+                                    ].mmd_weight_objective(
+                                        source_values,
+                                        target_values,
+                                        branch_weights,
+                                        gamma,
+                                    )
+                                )
+                        if branch_objectives:
+                            ratio_loss_values.append(
+                                float(
+                                    torch.stack(branch_objectives)
+                                    .mean()
+                                    .detach()
+                                    .item()
+                                )
+                            )
+                elif method == "matched_no_iw":
+                    raw_weights = torch.ones(
+                        images.shape[0],
+                        num_classes,
+                        device=device,
                     )
                 else:
                     raw_weights = raw_weight_cache[indices.long()].to(device)
@@ -1272,9 +1475,27 @@ def train_classifier(
                     normalization_scope=normalization,
                 )
                 source_weights = stages["classifier_used"]
+                if method in (
+                    "adiw_original",
+                    "adiw_ones",
+                    "adiw_mean",
+                    "adiw_shuffle",
+                ):
+                    source_weights = apply_weight_intervention(
+                        source_weights,
+                        classifier_method_contract(method),
+                        generator=shuffle_generator,
+                    )
+                stages["classifier_used"] = source_weights
+                classifier_used_cache[indices.long().cpu()] = (
+                    source_weights.detach().cpu()
+                )
                 epoch_raw_weights.append(raw_weights.detach().cpu())
+                epoch_used_weights.append(source_weights.detach().cpu())
                 epoch_complements.append(complements.detach().cpu())
-                loss, _ = modules["adiw_scar"].combined_adiw_scar_loss(
+                loss, risk_diagnostics = modules[
+                    "adiw_scar"
+                ].combined_adiw_scar_loss(
                     source_outputs,
                     complements,
                     source_weights,
@@ -1285,14 +1506,36 @@ def train_classifier(
                     target_fraction,
                     correction="abs",
                 )
+                source_contribution = (
+                    (1.0 - target_fraction)
+                    * risk_diagnostics["source_risk"]
+                )
+                target_contribution = (
+                    target_fraction * risk_diagnostics["target_risk"]
+                )
             if not bool(torch.isfinite(loss).item()):
                 raise FloatingPointError(
                     "non-finite classifier loss at epoch {}".format(epoch)
                 )
             loss.backward()
+            squared_gradient_norm = loss.new_zeros(())
+            for parameter in classifier.parameters():
+                if parameter.grad is not None:
+                    squared_gradient_norm = (
+                        squared_gradient_norm
+                        + parameter.grad.detach().square().sum()
+                    )
+            gradient_norm = squared_gradient_norm.sqrt()
             optimizer.step()
             current = images.shape[0]
             total_loss += float(loss.item()) * current
+            source_contribution_sum += (
+                float(source_contribution.detach().item()) * current
+            )
+            target_contribution_sum += (
+                float(target_contribution.detach().item()) * current
+            )
+            gradient_norm_sum += float(gradient_norm.item()) * current
             total_samples += current
 
         if epoch_raw_weights:
@@ -1305,6 +1548,16 @@ def train_classifier(
                 max_weight=ratio_clip_max,
                 normalization_scope=normalization,
             )
+            final_raw_weight_summary = summarize_weight_values(
+                stages["raw"],
+                raw_reference=stages["raw"],
+                min_weight=ratio_clip_min,
+                max_weight=ratio_clip_max,
+            )
+            if epoch_used_weights:
+                stages["classifier_used"] = torch.cat(
+                    epoch_used_weights, dim=0
+                )
             stage_rows = weight_stage_rows(
                 stages,
                 complements_epoch,
@@ -1316,17 +1569,19 @@ def train_classifier(
             classifier_weight_rows.extend(
                 stage_rows["classifier_used"]
             )
-            weight_summary = summarize_weight_values(
-                stages["classifier_used"]
-            )
+            weight_summary = summarize_weight_values(stages["classifier_used"])
         else:
-            unit = torch.ones(1)
-            weight_summary = summarize_weight_values(unit)
+            weight_summary = summarize_weight_values(classifier_used_cache)
 
         source_cache_for_eval = raw_weight_cache
-        if method == "adiw":
+        if method in adiw_methods:
             source_cache_for_eval = weight_memory.weights.detach().cpu()
-        if method in ("no_iw", "pooled_scar"):
+        if method in (
+            "no_iw",
+            "current_no_iw",
+            "matched_no_iw",
+            "pooled_scar",
+        ):
             source_cache_for_eval = None
         source_risk, source_class_risk = evaluate_weak_risk(
             modules,
@@ -1376,9 +1631,34 @@ def train_classifier(
                 ],
                 "target_ece": target_eval["ece"],
                 "target_nll": target_eval["nll"],
+                "true_target_risk": target_eval["nll"],
+                "estimated_weak_risk": target_risk,
+                "estimated_iw_risk": source_risk,
+                "source_risk_contribution": source_contribution_sum
+                / float(max(total_samples, 1)),
+                "target_risk_contribution": target_contribution_sum
+                / float(max(total_samples, 1)),
+                "total_loss_scale": total_loss
+                / float(max(total_samples, 1)),
+                "classifier_gradient_norm": gradient_norm_sum
+                / float(max(total_samples, 1)),
+                "ratio_estimator_loss": (
+                    float(np.mean(ratio_loss_values))
+                    if ratio_loss_values
+                    else None
+                ),
                 "weight_mean": weight_summary["mean"],
                 "weight_std": weight_summary["std"],
+                "weight_cv": weight_summary["cv"],
+                "weight_min": weight_summary["min"],
+                "weight_max": weight_summary["max"],
+                "weight_q01": weight_summary["q01"],
+                "weight_q05": weight_summary["q05"],
+                "weight_q50": weight_summary["q50"],
+                "weight_q95": weight_summary["q95"],
+                "weight_q99": weight_summary["q99"],
                 "weight_ess": weight_summary["ess"],
+                "normalized_ess": weight_summary["normalized_ess"],
             }
         )
         for domain, class_metrics, class_risks in (
@@ -1414,6 +1694,13 @@ def train_classifier(
     minimum_risk_index = int(np.argmin(target_risks))
     return {
         "model": classifier,
+        "source_weight_cache": (
+            None
+            if weight_memory is None
+            else weight_memory.weights.detach().cpu()
+        ),
+        "classifier_used_cache": classifier_used_cache,
+        "final_raw_weight_summary": final_raw_weight_summary,
         "epoch_rows": epoch_rows,
         "per_class_rows": per_class_rows,
         "classifier_weight_rows": classifier_weight_rows,
@@ -1503,11 +1790,12 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but unavailable")
 
-    shift_name = (
-        "rotation_{:g}".format(args.target_rotation)
-        if args.shift == "rotation"
-        else "heterogeneous_class_specific"
-    )
+    if args.class_rotations is not None:
+        shift_name = args.shift_label or "class_rotation"
+    elif args.shift == "rotation":
+        shift_name = "rotation_{:g}".format(args.target_rotation)
+    else:
+        shift_name = "heterogeneous_class_specific"
     setting_name = "{}_tw{}_clip{:g}-{:g}_norm-{}".format(
         shift_name,
         args.target_weak_size,
@@ -1542,11 +1830,14 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
             "target_test_used_for_selection": False,
         }
     )
+    config["config_hash"] = _config_hash(config)
     _json_dump(os.path.join(run_dir, "config.yaml"), config)
 
     started_at = dt.datetime.now(dt.timezone.utc).isoformat()
     summary = {
+        "experiment": args.experiment,
         "dataset": args.dataset,
+        "shift_type": shift_name,
         "shift": shift_name,
         "setting": setting_name,
         "seed": args.seed,
@@ -1556,10 +1847,19 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         "last_stable_classifier_epoch": 0,
         "started_at": started_at,
         "git_commit_hash": _git_commit_hash(args.repository_root),
+        "git_commit": _git_commit_hash(args.repository_root),
+        "config_hash": config["config_hash"],
+        "data_seed": args.data_seed,
+        "model_seed": args.model_seed,
+        "batch_seed": args.batch_seed,
+        "ratio_seed": args.ratio_seed,
+        "weight_shuffle_seed": args.weight_shuffle_seed,
+        "class_rotations": args.class_rotations,
+        "target_test_used_for_selection": False,
     }
     _json_dump(os.path.join(run_dir, "summary.json"), summary)
     try:
-        set_random_seed(args.seed)
+        set_random_seed(args.data_seed)
         modules = load_scarce_modules(args.scarce_repo)
         data, shift_spec = prepare_matched_data(
             modules,
@@ -1567,9 +1867,10 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
             args.dataset,
             args.target_weak_size,
             args.source_size,
-            args.seed,
+            args.data_seed,
             args.shift,
             args.target_rotation,
+            class_rotations=args.class_rotations,
         )
         split_hash = paired_split_hash(data, shift_spec)
         ratio_model = None
@@ -1614,7 +1915,7 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
                 args.weight_decay,
                 args.workers,
                 args.ratio_validation_fraction,
-                args.seed,
+                args.ratio_seed,
                 args.ratio_clip_min,
                 args.ratio_clip_max,
                 args.normalization,
@@ -1647,7 +1948,9 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
             args.method,
             data,
             device,
-            args.seed,
+            args.model_seed,
+            args.batch_seed,
+            args.weight_shuffle_seed,
             args.batch_size,
             args.classifier_epochs,
             args.learning_rate,
@@ -1657,6 +1960,37 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
             args.ratio_clip_min,
             args.ratio_clip_max,
             args.normalization,
+        )
+        diagnostic_sample_count = min(
+            int(args.diagnostic_max_samples), 2048
+        )
+        source_features = collect_classifier_features(
+            data["source_weak"],
+            classifier_output["model"],
+            device,
+            args.batch_size,
+            args.workers,
+            diagnostic_sample_count,
+        )
+        target_features = collect_classifier_features(
+            data["target_weak"],
+            classifier_output["model"],
+            device,
+            args.batch_size,
+            args.workers,
+            diagnostic_sample_count,
+        )
+        distribution_matching = distribution_matching_diagnostics(
+            source_features,
+            target_features,
+            classifier_output["classifier_used_cache"][
+                : source_features.shape[0]
+            ],
+            seed=args.seed + 50000,
+        )
+        _json_dump(
+            os.path.join(run_dir, "distribution_matching.json"),
+            distribution_matching,
         )
         _write_csv(
             os.path.join(run_dir, "epoch_metrics.csv"),
@@ -1678,6 +2012,12 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
             "ratio": None
             if ratio_model is None
             else ratio_model.state_dict(),
+            "source_weight_cache": classifier_output[
+                "source_weight_cache"
+            ],
+            "classifier_used_cache": classifier_output[
+                "classifier_used_cache"
+            ],
             "config": config,
             "split_hash": split_hash,
         }
@@ -1686,6 +2026,21 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         raw_summary = _stage_summary(
             ratio_output["ratio_raw_stats.csv"], args.ratio_epochs
         )
+        if raw_summary["mean"] is None:
+            classifier_raw = classifier_output[
+                "final_raw_weight_summary"
+            ]
+            raw_summary = {
+                "mean": classifier_raw["mean"],
+                "std": classifier_raw["std"],
+                "ess": classifier_raw["ess"],
+                "lower_clipping_rate": classifier_raw[
+                    "lower_clipping_rate"
+                ],
+                "upper_clipping_rate": classifier_raw[
+                    "upper_clipping_rate"
+                ],
+            }
         clipped_summary = _stage_summary(
             ratio_output["ratio_clipped_stats.csv"], args.ratio_epochs
         )
@@ -1730,7 +2085,11 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
                 "status": "ok",
                 "finished_at": dt.datetime.now(dt.timezone.utc).isoformat(),
                 "split_hash": split_hash,
-                "ratio_split_hash": ratio_output["split_hash"],
+                "ratio_split_hash": (
+                    ratio_output["split_hash"]
+                    if ratio_output["split_hash"] is not None
+                    else split_hash
+                ),
                 "source_size": len(data["source_weak"]),
                 "target_weak_size": len(data["target_weak"]),
                 "ratio_parameter_count": ratio_metadata["parameter_count"],
@@ -1787,6 +2146,45 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
                 ],
                 "classifier_used_weight_std": epoch_rows[-1]["weight_std"],
                 "classifier_used_weight_ess": epoch_rows[-1]["weight_ess"],
+                "classifier_used_weight_cv": epoch_rows[-1]["weight_cv"],
+                "normalized_ESS": epoch_rows[-1]["normalized_ess"],
+                "ESS": epoch_rows[-1]["weight_ess"],
+                "true_target_risk": epoch_rows[-1]["true_target_risk"],
+                "estimated_weak_risk": epoch_rows[-1][
+                    "estimated_weak_risk"
+                ],
+                "estimated_iw_risk": epoch_rows[-1]["estimated_iw_risk"],
+                "runtime": ratio_output["seconds"]
+                + cache_seconds
+                + classifier_output["seconds"],
+                "weighted_MMD": distribution_matching["weighted_mmd"],
+                "weighted_mmd": distribution_matching["weighted_mmd"],
+                "weighted_feature_mean_error": distribution_matching[
+                    "weighted_feature_mean_error"
+                ],
+                "weighted_covariance_error": distribution_matching[
+                    "weighted_covariance_error"
+                ],
+                "posthoc_domain_accuracy": distribution_matching[
+                    "posthoc_domain_accuracy"
+                ],
+                "posthoc_domain_AUC": distribution_matching[
+                    "posthoc_domain_auc"
+                ],
+                "posthoc_domain_auc": distribution_matching[
+                    "posthoc_domain_auc"
+                ],
+                "raw_ratio_mean": raw_summary["mean"],
+                "raw_ratio_std": raw_summary["std"],
+                "raw_lower_clip_rate": raw_summary[
+                    "lower_clipping_rate"
+                ],
+                "raw_upper_clip_rate": raw_summary[
+                    "upper_clipping_rate"
+                ],
+                "used_weight_mean": epoch_rows[-1]["weight_mean"],
+                "used_weight_std": epoch_rows[-1]["weight_std"],
+                "used_weight_CV": epoch_rows[-1]["weight_cv"],
                 "lower_clipping_rate": raw_summary[
                     "lower_clipping_rate"
                 ],
@@ -1842,17 +2240,30 @@ def parse_args(
 ) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scarce-repo", required=True)
+    parser.add_argument("--experiment", default="next_round")
     parser.add_argument("--repository-root", default=os.getcwd())
     parser.add_argument("--results-root", default="results/next_round")
     parser.add_argument("--dataset", default="mnist")
     parser.add_argument(
-        "--shift", choices=("rotation", "heterogeneous"), default="rotation"
+        "--shift",
+        choices=("rotation", "heterogeneous", "class_rotation"),
+        default="rotation",
+    )
+    parser.add_argument("--shift-label")
+    parser.add_argument(
+        "--class-rotations",
+        help="comma-separated per-class target rotations",
     )
     parser.add_argument("--target-rotation", type=float, default=30.0)
     parser.add_argument("--target-weak-size", type=int, default=1000)
     parser.add_argument("--source-size", type=int, default=0)
     parser.add_argument("--method", choices=METHODS, required=True)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--data-seed", type=int)
+    parser.add_argument("--model-seed", type=int)
+    parser.add_argument("--batch-seed", type=int)
+    parser.add_argument("--ratio-seed", type=int)
+    parser.add_argument("--weight-shuffle-seed", type=int)
     parser.add_argument("--ratio-epochs", type=int, default=10)
     parser.add_argument("--classifier-epochs", type=int, default=200)
     parser.add_argument("--batch-size", type=int, default=256)
@@ -1880,8 +2291,36 @@ def parse_args(
         parser.error("epoch counts must be positive")
     if not 0.0 < args.ratio_validation_fraction < 1.0:
         parser.error("ratio validation fraction must be between zero and one")
-    if args.ratio_clip_min <= 0 or args.ratio_clip_max < args.ratio_clip_min:
+    if args.ratio_clip_min < 0 or args.ratio_clip_max < args.ratio_clip_min:
         parser.error("invalid ratio clip bounds")
+    if args.class_rotations:
+        try:
+            args.class_rotations = [
+                float(value) for value in args.class_rotations.split(",")
+            ]
+        except ValueError:
+            parser.error("--class-rotations must contain numeric angles")
+        if len(args.class_rotations) != 10:
+            parser.error("--class-rotations must contain ten angles")
+    else:
+        args.class_rotations = None
+    args.data_seed = (
+        args.seed if args.data_seed is None else args.data_seed
+    )
+    args.model_seed = (
+        args.seed + 10000 if args.model_seed is None else args.model_seed
+    )
+    args.batch_seed = (
+        args.seed + 20000 if args.batch_seed is None else args.batch_seed
+    )
+    args.ratio_seed = (
+        args.seed + 30000 if args.ratio_seed is None else args.ratio_seed
+    )
+    args.weight_shuffle_seed = (
+        args.seed + 40000
+        if args.weight_shuffle_seed is None
+        else args.weight_shuffle_seed
+    )
     return args
 
 

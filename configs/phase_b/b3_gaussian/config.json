@@ -1,0 +1,31 @@
+{
+  "experiment": "B3",
+  "q": 3,
+  "settings": [
+    "no_shift",
+    "homogeneous_conditional_shift",
+    "heterogeneous_conditional_shift",
+    "class_prior_shift_only"
+  ],
+  "methods": [
+    "no_iw",
+    "global_estimated_ratio",
+    "conditional_estimated_ratio",
+    "oracle_global_ratio",
+    "oracle_conditional_ratio"
+  ],
+  "seeds": [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+    10, 11, 12, 13, 14, 15, 16, 17, 18, 19
+  ],
+  "source_size": 2000,
+  "target_weak_size": 1000,
+  "target_test_size": 2000,
+  "ratio_epochs": 100,
+  "classifier_epochs": 50,
+  "smoke_ratio_epochs": 10,
+  "smoke_classifier_epochs": 5,
+  "learning_rate": 0.01,
+  "lower_clip": 0.01,
+  "upper_clip": 20.0
+}

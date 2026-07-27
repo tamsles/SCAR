@@ -1,0 +1,20 @@
+{
+  "experiment": "B1",
+  "dataset": "mnist",
+  "target_rotation": 30,
+  "target_weak_size": 1000,
+  "source_size": 0,
+  "methods": ["adiw_original", "unified", "multihead", "fusion"],
+  "seeds": [0, 1, 2, 3, 4],
+  "ratio_epochs": 10,
+  "smoke_ratio_epochs": 1,
+  "batch_size": 256,
+  "workers": 0,
+  "ratio_learning_rate": 0.001,
+  "weight_decay": 0.00001,
+  "lower_clip": 0.01,
+  "upper_clip": 20.0,
+  "normalization": "conditional_branch",
+  "ratio_validation_fraction": 0.2,
+  "diagnostic_max_samples": 2048
+}

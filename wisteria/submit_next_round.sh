@@ -8,6 +8,7 @@ cd "${REPO_DIR}"
 
 SCARCE_REPO="${SCARCE_REPO:-${HOME}/adiw_scar_run_20260714_140713/SCARCE}"
 CONFIG="${CONFIG:-configs/next_round.yaml}"
+RUNNER="${RUNNER:-scripts/run_next_round.py}"
 PHASE="${PHASE:-smoke}"
 EXPERIMENT_MODE="${EXPERIMENT_MODE:-smoke}"
 RESULTS_ROOT="${RESULTS_ROOT:-results/next_round_${PHASE}}"
@@ -33,7 +34,7 @@ if [[ "${EXPERIMENT_MODE}" != "smoke" \
 fi
 
 total=$(
-    "${PYTHON_BIN}" scripts/run_next_round.py \
+    "${PYTHON_BIN}" "${RUNNER}" \
         --config "${CONFIG}" --phase "${PHASE}" --count
 )
 if [[ ! "${total}" =~ ^[0-9]+$ ]]; then
@@ -64,6 +65,7 @@ escape_sed() {
 escaped_repo="$(escape_sed "${REPO_DIR}")"
 escaped_scarce="$(escape_sed "${SCARCE_REPO}")"
 escaped_config="$(escape_sed "${CONFIG}")"
+escaped_runner="$(escape_sed "${RUNNER}")"
 escaped_results="$(escape_sed "${RESULTS_ROOT}")"
 chunk=0
 offset="${OFFSET}"
@@ -90,6 +92,7 @@ while [[ "${offset}" -lt "${last}" ]]; do
         -e "s/__REPO_DIR__/${escaped_repo}/g" \
         -e "s/__SCARCE_REPO__/${escaped_scarce}/g" \
         -e "s/__CONFIG__/${escaped_config}/g" \
+        -e "s/__RUNNER__/${escaped_runner}/g" \
         -e "s/__PHASE__/$(escape_sed "${PHASE}")/g" \
         -e "s/__EXPERIMENT_MODE__/$(escape_sed "${EXPERIMENT_MODE}")/g" \
         -e "s/__RESULTS_ROOT__/${escaped_results}/g" \

@@ -14,6 +14,7 @@ CHUNK=__CHUNK__
 REPO_DIR="__REPO_DIR__"
 SCARCE_REPO="__SCARCE_REPO__"
 CONFIG="__CONFIG__"
+RUNNER="__RUNNER__"
 PHASE="__PHASE__"
 EXPERIMENT_MODE="__EXPERIMENT_MODE__"
 RESULTS_ROOT="__RESULTS_ROOT__"
@@ -98,7 +99,7 @@ run_task() {
         "$(date --iso-8601=seconds)" > "${running}"
     echo "Launch ${task_name} on slot ${slot} (${device_token})"
     if CUDA_VISIBLE_DEVICES="${device_token}" \
-        "${PYTHON_BIN}" scripts/run_next_round.py \
+        "${PYTHON_BIN}" "${RUNNER}" \
             --config "${CONFIG}" \
             --phase "${PHASE}" \
             --experiment-mode "${EXPERIMENT_MODE}" \
