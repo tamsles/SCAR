@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from src.ratio_diagnostics import ratio_components_from_logits
+from src.ratio_diagnostics import ratio_components_from_logits, weighted_mmd
 from src.risk_recovery_metrics import paired_interval, risk_recovery_summary
 from src.weight_interventions import apply_weight_intervention
 from src.synthetic_gaussian import (
@@ -99,6 +99,19 @@ class PhaseBUtilityTests(unittest.TestCase):
         self.assertTrue(
             torch.allclose(branch_ratio, torch.ones_like(branch_ratio))
         )
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA is required")
+    def test_weighted_mmd_aligns_gpu_weights_with_cpu_features(self):
+        source = torch.tensor(
+            [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+        )
+        target = source + 0.25
+        cpu_weights = torch.tensor([0.5, 1.0, 1.5, 1.0])
+        expected = weighted_mmd(source, target, cpu_weights, seed=7)
+        actual = weighted_mmd(
+            source, target, cpu_weights.cuda(), seed=7
+        )
+        self.assertAlmostEqual(actual, expected, places=6)
 
 
 if __name__ == "__main__":

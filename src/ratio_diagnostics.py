@@ -202,13 +202,16 @@ def weighted_mmd(
     target_index = torch.randperm(
         target_features.shape[0], generator=generator
     )[:target_count]
+    source_index = source_index.to(source_features.device)
+    target_index = target_index.to(target_features.device)
     source = source_features[source_index].detach().float().reshape(
         source_count, -1
     )
     target = target_features[target_index].detach().float().reshape(
         target_count, -1
     )
-    weights = source_weights[source_index]
+    target = target.to(source.device)
+    weights = source_weights.detach().to(source.device)[source_index]
     if weights.ndim == 2:
         weights = weights.mean(dim=1)
     weights = _normalized_weights(weights, eps=eps).float()
@@ -363,4 +366,3 @@ def distribution_matching_diagnostics(
         )
     )
     return output
-
