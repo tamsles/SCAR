@@ -38,6 +38,7 @@ total=$(
         --config "${CONFIG}" \
         --phase "${PHASE}" \
         --experiment-mode "${EXPERIMENT_MODE}" \
+        --results-root "${RESULTS_ROOT}" \
         --count
 )
 if [[ ! "${total}" =~ ^[0-9]+$ ]]; then
