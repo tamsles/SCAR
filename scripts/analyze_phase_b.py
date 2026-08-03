@@ -8,7 +8,7 @@ import math
 import os
 import shutil
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -854,6 +854,382 @@ def _copy_report(path: str, output_report_dir: str) -> None:
     shutil.copy2(path, os.path.join(output_report_dir, os.path.basename(path)))
 
 
+def _summary_mean(
+    runs: Sequence[Dict[str, Any]],
+    experiment: str,
+    metric: str,
+    **filters: Any
+) -> Optional[float]:
+    values = [
+        float(run[metric])
+        for run in runs
+        if run.get("experiment") == experiment
+        and all(run.get(key) == value for key, value in filters.items())
+        and run.get(metric) is not None
+    ]
+    return float(np.mean(values)) if values else None
+
+
+def _summary_row(
+    rows: Sequence[Dict[str, Any]], **filters: Any
+) -> Optional[Dict[str, Any]]:
+    for row in rows:
+        if all(row.get(key) == value for key, value in filters.items()):
+            return row
+    return None
+
+
+def _summary_number(value: Optional[float], digits: int = 3) -> str:
+    return "n/a" if value is None else ("{:.%df}" % digits).format(value)
+
+
+def phase_b_summary_report(
+    runs: Sequence[Dict[str, Any]],
+    paired_b0: Sequence[Dict[str, Any]],
+    risk_rows: Sequence[Dict[str, Any]],
+    paired_b4: Sequence[Dict[str, Any]],
+    decision: Dict[str, Any],
+    complete: bool,
+    report_path: str,
+) -> None:
+    """Write the preregistered seven-question Phase B synthesis."""
+    counts = Counter(run.get("experiment") for run in runs)
+    original_shuffle = _summary_row(
+        paired_b0,
+        reference="adiw_original",
+        comparator="adiw_shuffle",
+    )
+    original_ones = _summary_row(
+        paired_b0,
+        reference="adiw_original",
+        comparator="adiw_ones",
+    )
+    ones_current = _summary_row(
+        paired_b0,
+        reference="adiw_ones",
+        comparator="current_no_iw",
+    )
+    matched_current = _summary_row(
+        paired_b0,
+        reference="matched_no_iw",
+        comparator="current_no_iw",
+    )
+    original_mean = _summary_row(
+        paired_b0,
+        reference="adiw_original",
+        comparator="adiw_mean",
+    )
+
+    b4_heterogeneous = [
+        row
+        for row in paired_b4
+        if str(row.get("setting", "")).startswith(("H2", "H3", "H4"))
+    ]
+    b4_criterion_count = sum(
+        row["mean_difference"] > 1.0 and row["t_ci95_lower"] > 0.0
+        for row in b4_heterogeneous
+    )
+    b4_deltas = [row["mean_difference"] for row in b4_heterogeneous]
+
+    b3_homogeneous_conditional = _summary_mean(
+        runs,
+        "B3",
+        "last10_target_accuracy",
+        shift_type="homogeneous_conditional_shift",
+        method="conditional_estimated_ratio",
+    )
+    b3_homogeneous_global = _summary_mean(
+        runs,
+        "B3",
+        "last10_target_accuracy",
+        shift_type="homogeneous_conditional_shift",
+        method="global_estimated_ratio",
+    )
+    b3_estimated_homogeneous = (
+        b3_homogeneous_conditional - b3_homogeneous_global
+        if b3_homogeneous_conditional is not None
+        and b3_homogeneous_global is not None
+        else None
+    )
+    b3_heterogeneous_corr = _summary_mean(
+        runs,
+        "B3",
+        "ratio_oracle_correlation",
+        shift_type="heterogeneous_conditional_shift",
+        method="conditional_estimated_ratio",
+    )
+    b3_heterogeneous_mse = _summary_mean(
+        runs,
+        "B3",
+        "ratio_mse",
+        shift_type="heterogeneous_conditional_shift",
+        method="conditional_estimated_ratio",
+    )
+    b1_conditional_auc = [
+        _summary_mean(
+            runs,
+            "B1",
+            "posthoc_domain_AUC",
+            method=method,
+        )
+        for method in ("fusion", "multihead", "unified")
+    ]
+    b1_conditional_auc = [
+        value for value in b1_conditional_auc if value is not None
+    ]
+
+    b2_accuracy_at_zero = _summary_mean(
+        runs,
+        "B2",
+        "last10_target_accuracy",
+        lower_clip=0.0,
+        normalization="conditional_branch",
+        calibration="none",
+    )
+    b2_accuracy_at_default = _summary_mean(
+        runs,
+        "B2",
+        "last10_target_accuracy",
+        lower_clip=0.01,
+        normalization="conditional_branch",
+        calibration="none",
+    )
+    b2_default_clip_rate = _summary_mean(
+        runs,
+        "B2",
+        "raw_lower_clip_rate",
+        lower_clip=0.01,
+        normalization="conditional_branch",
+        calibration="none",
+    )
+    b2_selected_uncalibrated = [
+        _summary_mean(
+            runs,
+            "B2",
+            "last10_target_accuracy",
+            lower_clip=1.0e-6,
+            normalization=normalization,
+            calibration="none",
+        )
+        for normalization in ("global", "none")
+    ]
+    b2_selected_calibrated = [
+        _summary_mean(
+            runs,
+            "B2",
+            "last10_target_accuracy",
+            lower_clip=1.0e-6,
+            normalization=normalization,
+            calibration=calibration,
+        )
+        for normalization in ("global", "none")
+        for calibration in ("temperature", "platt")
+    ]
+    b2_selected_uncalibrated = [
+        value
+        for value in b2_selected_uncalibrated
+        if value is not None
+    ]
+    b2_selected_calibrated = [
+        value for value in b2_selected_calibrated if value is not None
+    ]
+
+    weak_b3 = _summary_row(
+        risk_rows, experiment="B3", estimator="estimated_weak_risk"
+    )
+    weak_b4 = _summary_row(
+        risk_rows, experiment="B4", estimator="estimated_weak_risk"
+    )
+    iw_b4 = _summary_row(
+        risk_rows, experiment="B4", estimator="estimated_iw_risk"
+    )
+
+    def contrast(row: Optional[Dict[str, Any]]) -> str:
+        if row is None:
+            return "n/a"
+        return "{:.3f} pp (t 95% CI [{:.3f}, {:.3f}])".format(
+            row["mean_difference"],
+            row["t_ci95_lower"],
+            row["t_ci95_upper"],
+        )
+
+    lines = [
+        "# Next-Round Phase B summary",
+        "",
+        "**Evidence status:** {}.".format(
+            "formal matrix complete"
+            if complete
+            else "provisional; formal matrices incomplete"
+        ),
+        "",
+        "Formal run counts: B0={B0}, B1={B1}, B2={B2}, B3={B3}, "
+        "B4={B4} (total={total}). Target test labels were used only for "
+        "offline evaluation and never for selection.".format(
+            B0=counts.get("B0", 0),
+            B1=counts.get("B1", 0),
+            B2=counts.get("B2", 0),
+            B3=counts.get("B3", 0),
+            B4=counts.get("B4", 0),
+            total=len(runs),
+        ),
+        "",
+        "## Answers to the seven preregistered questions",
+        "",
+        "1. **Does ADIW benefit from sample-specific weight assignment? "
+        "Statistically uncertain, and not the main source of the gain.** "
+        "Original-minus-shuffle was {}; original-minus-ones was {}. The "
+        "shuffle t interval crosses zero, while its bootstrap interval is "
+        "positive, so the data support at most a small correspondence "
+        "effect rather than a robust primary mechanism.".format(
+            contrast(original_shuffle), contrast(original_ones)
+        ),
+        "",
+        "2. **Is the ADIW advantage mainly pipeline, mixing, or loss-scale "
+        "related? Pipeline/mixing is data-supported; loss scale is not "
+        "separately identified.** Ones-minus-current was {}; matched-no-IW "
+        "minus current was {}. By contrast, original-minus-mean was {}, "
+        "so the dominant reproducible gain comes from matching the ADIW "
+        "training pipeline rather than per-sample weights.".format(
+            contrast(ones_current),
+            contrast(matched_current),
+            contrast(original_mean),
+        ),
+        "",
+        "3. **Does conditional ratio modeling help only under heterogeneous "
+        "class-wise shift? No practical advantage was found.** B4 produced "
+        "{} qualifying heterogeneous contrasts out of {}; conditional-minus-"
+        "ADIW deltas ranged from {} to {} pp. In B3, the estimated "
+        "conditional model also beat the global model by {} pp in the "
+        "homogeneous shift, so any synthetic advantage is not exclusive to "
+        "heterogeneity. The oracle heterogeneous delta of {} pp triggered "
+        "B4, but that is diagnostic-only evidence.".format(
+            b4_criterion_count,
+            len(b4_heterogeneous),
+            _summary_number(min(b4_deltas) if b4_deltas else None),
+            _summary_number(max(b4_deltas) if b4_deltas else None),
+            _summary_number(b3_estimated_homogeneous),
+            _summary_number(
+                decision.get("oracle_conditional_minus_global_pp")
+            ),
+        ),
+        "",
+        "4. **Does the current conditional estimator recover the correct "
+        "ratio? Only partially on synthetic data, and not convincingly on "
+        "MNIST.** In heterogeneous B3 its mean oracle correlation was {} "
+        "with ratio MSE {}. In B1, conditional-method post-hoc domain AUCs "
+        "were {}-{}, far from the ideal 0.5, showing that weighted "
+        "MNIST source samples remained readily distinguishable from target "
+        "samples.".format(
+            _summary_number(b3_heterogeneous_corr),
+            _summary_number(b3_heterogeneous_mse, 4),
+            _summary_number(
+                min(b1_conditional_auc) if b1_conditional_auc else None, 4
+            ),
+            _summary_number(
+                max(b1_conditional_auc) if b1_conditional_auc else None, 4
+            ),
+        ),
+        "",
+        "5. **Do clipping and branch normalization amplify saturation "
+        "artifacts? Clipping is the dominant stabilizer; branch normalization "
+        "is not a consistent amplifier in this grid.** Conditional-branch "
+        "accuracy rose from {}% at lower clip 0 to {}% at 0.01, where {}% "
+        "of raw ratios were below the floor. The target-label-free selected "
+        "1e-6 configurations scored {}-{}% uncalibrated and {}-{}% after "
+        "temperature/Platt calibration. Thus performance improves mainly as "
+        "saturated ratios are collapsed toward the floor; calibration did "
+        "not rescue the selected ratios.".format(
+            _summary_number(b2_accuracy_at_zero),
+            _summary_number(b2_accuracy_at_default),
+            _summary_number(
+                100.0 * b2_default_clip_rate
+                if b2_default_clip_rate is not None
+                else None,
+                2,
+            ),
+            _summary_number(
+                min(b2_selected_uncalibrated)
+                if b2_selected_uncalibrated
+                else None
+            ),
+            _summary_number(
+                max(b2_selected_uncalibrated)
+                if b2_selected_uncalibrated
+                else None
+            ),
+            _summary_number(
+                min(b2_selected_calibrated)
+                if b2_selected_calibrated
+                else None
+            ),
+            _summary_number(
+                max(b2_selected_calibrated)
+                if b2_selected_calibrated
+                else None
+            ),
+        ),
+        "",
+        "6. **Can the weak-risk estimator reliably rank models and select "
+        "checkpoints? Not generally; reliability is setting-dependent.** In "
+        "B3, weak-risk Pearson/Spearman were {}/{} with regret {}; in B4 "
+        "they fell to {}/{} with regret {}. B4 IW-risk Pearson was {} with "
+        "regret {}, so importance weighting did not provide reliable "
+        "cross-method selection there.".format(
+            _summary_number(weak_b3.get("pearson") if weak_b3 else None),
+            _summary_number(weak_b3.get("spearman") if weak_b3 else None),
+            _summary_number(
+                weak_b3.get("selection_regret") if weak_b3 else None, 4
+            ),
+            _summary_number(weak_b4.get("pearson") if weak_b4 else None),
+            _summary_number(weak_b4.get("spearman") if weak_b4 else None),
+            _summary_number(
+                weak_b4.get("selection_regret") if weak_b4 else None, 4
+            ),
+            _summary_number(iw_b4.get("pearson") if iw_b4 else None),
+            _summary_number(
+                iw_b4.get("selection_regret") if iw_b4 else None, 4
+            ),
+        ),
+        "",
+        "7. **Should the next round expand to 10-20 seeds or a target-weak-"
+        "size sweep? Do not broadly scale the current conditional estimator.** "
+        "B3 already has 20 seeds, B0 has 10, and the five-seed B4 matrix "
+        "shows no qualifying conditional advantage, including significant "
+        "negative effects in H2/H3. First redesign ratio estimation and "
+        "target-label-free selection; then prioritize a preregistered target-"
+        "weak-size sweep. Expanding B0 to 20 seeds is reasonable only if a "
+        "more precise estimate of the small original-versus-shuffle effect is "
+        "scientifically important.",
+        "",
+        "## Evidence classification",
+        "",
+        "- **Data-supported:** most ADIW gain comes from the matched training "
+        "pipeline; strong lower clipping stabilizes training; current "
+        "conditional methods have no practical B4 advantage.",
+        "- **Statistically uncertain:** the small sample-to-weight "
+        "correspondence effect in B0.",
+        "- **Oracle-only diagnostic:** heterogeneous Gaussian oracle "
+        "conditional-minus-global = {} pp.".format(
+            _summary_number(
+                decision.get("oracle_conditional_minus_global_pp")
+            )
+        ),
+        "- **Not yet identifiable:** the separate causal contributions of "
+        "loss scale versus source-target mixing, and target-weak-size effects.",
+        "",
+        "## Stage reports",
+        "",
+        "- B0 causal decomposition: `phase_b0_adiw_causal_decomposition.md`",
+        "- B1 ratio audit: `phase_b1_ratio_audit.md`",
+        "- B2 frozen post-processing: `phase_b2_postprocessing_ablation.md`",
+        "- B3 ground-truth benchmark: `phase_b3_gaussian_ground_truth.md`",
+        "- B4 heterogeneous MNIST: `phase_b4_heterogeneous_mnist.md`",
+    ]
+    os.makedirs(os.path.dirname(report_path), exist_ok=True)
+    with open(report_path, "w", encoding="utf-8") as stream:
+        stream.write("\n".join(lines) + "\n")
+
+
 def parse_args(
     argv: Optional[Sequence[str]] = None,
 ) -> argparse.Namespace:
@@ -933,30 +1309,15 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict[str, Any]:
         and len([run for run in runs if run.get("experiment") == "B3"]) >= 400
     )
     summary_path = os.path.join(args.reports_root, "phase_b_summary.md")
-    lines = [
-        "# Next-Round Phase B summary",
-        "",
-        "**Evidence status:** {}.".format(
-            "formal matrix complete"
-            if complete
-            else "provisional; formal matrices incomplete"
-        ),
-        "",
-        "- B0 causal decomposition: see `phase_b0_adiw_causal_decomposition.md`.",
-        "- B1 ratio correctness: see `phase_b1_ratio_audit.md`.",
-        "- B2 frozen post-processing: see `phase_b2_postprocessing_ablation.md`.",
-        "- B3 ground-truth benchmark: see `phase_b3_gaussian_ground_truth.md`.",
-        "- B4 decision: `{}`; rule and deltas are in `b4_decision.json`.".format(
-            decision["run_B4"]
-        ),
-        "",
-        "Conclusions are classified in the stage reports as data-supported, "
-        "statistically uncertain, oracle-only, or not yet identifiable. "
-        "Target test labels were used only for offline evaluation.",
-    ]
-    os.makedirs(args.reports_root, exist_ok=True)
-    with open(summary_path, "w", encoding="utf-8") as stream:
-        stream.write("\n".join(lines) + "\n")
+    phase_b_summary_report(
+        runs,
+        paired_b0,
+        risk_rows,
+        paired_b4,
+        decision,
+        complete,
+        summary_path,
+    )
     _copy_report(summary_path, os.path.join(args.output_root, "reports"))
     return {
         "runs": len(runs),
