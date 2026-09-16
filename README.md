@@ -10,6 +10,7 @@ Includes SCARCE baselines, importance weighting, and conditional density-ratio e
 - `configs/`: experiment settings
 - `datasets/`, `src/`: data utilities and diagnostics
 - `legacy/SCARCE/`: earlier SCARCE and ADIW experiments
+- [`legacy/IWPU/`](legacy/IWPU/README.md): independent IWPU reproduction (unofficial)
 - `wisteria/`: cluster job scripts
 - `reports/`: experiment summaries
 - `tests/`: unit tests

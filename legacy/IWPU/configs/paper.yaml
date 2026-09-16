@@ -1,0 +1,351 @@
+schema_version: 1
+
+project:
+  name: iwpu_reproduction
+  paper_title: Importance-weighted Positive-unlabeled Learning for Distribution Shift Adaptation
+  venue: AISTATS 2025
+  paper_url: https://proceedings.mlr.press/v258/kumagai25a.html
+  pdf_url: https://raw.githubusercontent.com/mlresearch/v258/main/assets/kumagai25a/kumagai25a.pdf
+  openreview_url: https://openreview.net/forum?id=CTYgrczjj2
+  implementation_status: from_paper_high_fidelity_reimplementation
+  official_code_available: false
+  exact_official_reproduction: false
+
+provenance_labels:
+  paper: Value is stated in the paper or integrated appendix.
+  official_dataset: Value comes from the cited dataset's official definition.
+  derived_from_paper: Value is an explicit expansion of the paper's verbal rule.
+  local_assumption: Value is required for execution but not reported by the paper.
+
+runtime:
+  device: auto
+  deterministic_algorithms: true
+  deterministic_algorithms_source: local_assumption
+  paper_hardware:
+    os: Linux
+    cpu: Intel Xeon
+    gpu: NVIDIA A100
+    source: paper
+  local_target_hardware:
+    gpu: NVIDIA RTX 3070
+    source: local_assumption
+    caveat: Results and timing are not hardware-matched to the paper; preserve effective batch size and log any fallback.
+
+repetitions:
+  count: 10
+  count_source: paper
+  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  seeds_source: local_assumption
+  note: The paper reports ten changing random seeds but does not publish their identities.
+
+data_protocol:
+  source_train:
+    positive: 1000
+    unlabeled: 5000
+    source: paper
+  target_train_sizes:
+    - positive: 10
+      unlabeled: 50
+    - positive: 20
+      unlabeled: 100
+    - positive: 40
+      unlabeled: 200
+  target_train_sizes_source: paper
+  target_validation:
+    positive: 20
+    unlabeled: 100
+    source: paper
+  target_test:
+    positive: 2500
+    negative: 2500
+    source: paper
+  class_priors:
+    source_positive: 0.5
+    target_positive: 0.5
+    source: paper
+  disjoint_splits: true
+  disjoint_splits_source: paper
+  sampling:
+    replacement: false
+    order: seeded_random
+    source: local_assumption
+  image_raw_split_policy:
+    pu_and_validation: official_train_split
+    evaluation: official_test_split
+    source: local_assumption
+  image_preprocessing:
+    scale_pixels_to: [0.0, 1.0]
+    augmentation: none
+    normalization: none_beyond_unit_scaling
+    source: local_assumption
+  tableshift:
+    repository: https://github.com/mlfoundations/tableshift
+    engineering_commit: fca9429814703a07e3902d005d46563a207b7f0a
+    engineering_commit_source: local_assumption
+    paper_commit: null
+    paper_commit_source: not_reported
+    use_repository_preprocessing: true
+    preprocessing_source: local_assumption
+    additional_scaling: none
+    additional_scaling_source: local_assumption
+    held_out_target_covariates_used_to_fit_transform: false
+
+tasks:
+  mnist_io:
+    dataset: mnist
+    dataset_url: https://yann.lecun.org/exdb/mnist/
+    paper_scope: main
+    shift: input_output_relation
+    source_positive_classes: [0, 2, 5, 7, 9]
+    source_negative_classes: [1, 3, 4, 6, 8]
+    target_positive_classes: [1, 3, 5, 7, 9]
+    target_negative_classes: [0, 2, 4, 6, 8]
+    mapping_source: derived_from_paper
+
+  mnist_support:
+    dataset: mnist
+    dataset_url: https://yann.lecun.org/exdb/mnist/
+    paper_scope: main
+    shift: support
+    source_positive_classes: [1, 3, 5]
+    source_negative_classes: [0, 2, 4]
+    target_positive_classes: [5, 7, 9]
+    target_negative_classes: [4, 6, 8]
+    mapping_source: paper
+
+  fmnist_io:
+    dataset: fashion_mnist
+    dataset_url: https://github.com/zalandoresearch/fashion-mnist
+    paper_scope: main
+    shift: input_output_relation
+    source_positive_classes: [0, 2, 7, 8, 9]
+    source_negative_classes: [1, 3, 4, 5, 6]
+    target_positive_classes: [1, 5, 7, 8, 9]
+    target_negative_classes: [0, 2, 3, 4, 6]
+    mapping_source: derived_from_paper
+
+  fmnist_support:
+    dataset: fashion_mnist
+    dataset_url: https://github.com/zalandoresearch/fashion-mnist
+    paper_scope: main
+    shift: support
+    source_positive_classes: [1, 5, 7]
+    source_negative_classes: [0, 2, 3]
+    target_positive_classes: [7, 8, 9]
+    target_negative_classes: [3, 4, 6]
+    mapping_source: paper
+
+  cifar10_io:
+    dataset: cifar10
+    dataset_url: https://www.cs.toronto.edu/~kriz/cifar.html
+    paper_scope: main
+    shift: input_output_relation
+    source_positive_classes: [2, 3, 8, 9]
+    source_negative_classes: [0, 1, 4, 5, 6, 7]
+    target_positive_classes: [0, 1, 8, 9]
+    target_negative_classes: [2, 3, 4, 5, 6, 7]
+    mapping_source: derived_from_paper
+
+  cifar10_support:
+    dataset: cifar10
+    dataset_url: https://www.cs.toronto.edu/~kriz/cifar.html
+    paper_scope: main
+    shift: support
+    source_positive_classes: [0, 1, 8]
+    source_negative_classes: [2, 3, 4, 5]
+    target_positive_classes: [1, 8, 9]
+    target_negative_classes: [4, 5, 6, 7]
+    mapping_source: paper
+
+  diabetes:
+    dataset: tableshift
+    tableshift_id: brfss_diabetes
+    dataset_url: https://tableshift.org/datasets.html#diabetes
+    paper_scope: main
+    shift: race
+    source_domain: white_non_hispanic
+    target_domain: all_other_race_ethnicity_groups
+    feature_dimension_reported_by_paper: 142
+    mapping_source: paper
+
+  foodstamp:
+    dataset: tableshift
+    tableshift_id: acsfoodstamps
+    dataset_url: https://tableshift.org/datasets.html#food-stamps
+    paper_scope: appendix_e6
+    shift: geographic_region
+    source_domain: all_regions_except_east_south_central
+    target_domain: east_south_central
+    feature_dimension_reported_by_paper: 239
+    mapping_source: official_dataset
+    inherited_count_protocol_source: local_assumption
+
+models:
+  mlp_feature_extractor:
+    layers: 3
+    activation: relu
+    widths:
+      mnist: 128
+      fashion_mnist: 128
+      tableshift: 32
+    source: paper
+    interpretation_note: The paper states the hidden and output node counts; exact layer-by-layer code is unavailable.
+  cifar10_feature_extractor:
+    convolution_blocks:
+      - out_channels: 6
+        kernel_size: 5
+        activation: relu
+        max_pool: 2
+      - out_channels: 16
+        kernel_size: 5
+        activation: relu
+        max_pool: 2
+    fully_connected: [120, 84]
+    source: paper
+  classifier_head:
+    layers: 1
+    source: paper
+  importance_head:
+    layers: 2
+    output: inverse_alpha_times_sigmoid
+    source: paper
+
+optimization:
+  optimizer: adam
+  optimizer_source: paper
+  adam:
+    betas: [0.9, 0.999]
+    epsilon: 1.0e-8
+    weight_decay: 0.0
+    source: local_assumption
+  learning_rates:
+    classifier_and_features: 1.0e-4
+    importance_model: 1.0e-3
+    source: paper
+  batch_sizes:
+    source: 256
+    target: 256
+    source_label: paper
+    interpretation: per_domain_total_pu_batch
+    interpretation_source: paper_algorithm_1
+    positive_unlabeled_allocation: equal_split
+    positive_unlabeled_allocation_source: local_assumption
+  max_epochs: 200
+  max_epochs_source: paper
+  early_stopping:
+    enabled: true
+    metric: target_validation_empirical_pu_risk
+    mode: min
+    patience: 20
+    patience_source: local_assumption
+    min_delta: 0.0
+    min_delta_source: local_assumption
+    tie_break: earliest_epoch
+    tie_break_source: local_assumption
+  loss: sigmoid
+  loss_source: paper
+  risk_correction: absolute_value
+  risk_correction_source: paper
+
+hyperparameters:
+  grids:
+    alpha: [0.1, 0.5, 0.9]
+    alpha_source: paper
+    beta: [0.1, 0.3, 0.5, 0.7, 0.9]
+    beta_source: paper
+    beta_foodstamp: [0.0, 0.1, 0.3, 0.5, 0.7, 0.9]
+    beta_foodstamp_source: paper
+    lambda_mmd: [1.0, 0.1, 0.01, 0.001]
+    lambda_mmd_source: paper
+  mmd:
+    rbf_kernel_mixtures: 5
+    rbf_kernel_mixtures_source: paper
+    bandwidth_rule: median_heuristic_geometric_mixture
+    bandwidth_rule_source: local_assumption
+  selection:
+    metric: target_validation_empirical_pu_risk
+    mode: min
+    tie_break: listed_grid_order
+    tie_break_source: local_assumption
+
+methods:
+  iwpu:
+    paper_label: Ours
+    family: dynamic_importance_weighted_pu
+    tune: [alpha, beta]
+  tepu:
+    paper_label: tePU
+    family: target_pu
+    tune: []
+  trpu:
+    paper_label: trPU
+    family: source_pu
+    tune: []
+  ftpu:
+    paper_label: ftPU
+    family: source_pretrain_target_finetune
+    tune: []
+  mtpu:
+    paper_label: mtPU
+    family: multitask_pu_two_heads
+    tune: [beta]
+  mtspu:
+    paper_label: mtsPU
+    family: multitask_pu_shared_head
+    tune: [beta]
+  dapu:
+    paper_label: DAPU
+    family: pu_domain_adaptation_mmd
+    tune: [beta, lambda_mmd]
+  udapu:
+    paper_label: UDAPU
+    family: unsupervised_domain_adaptation_pu_mmd
+    tune: [lambda_mmd]
+  giw:
+    paper_label: GIW
+    family: dynamic_importance_weighting_pseudo_pn
+    tune: [alpha, beta]
+
+ablations:
+  two_step:
+    paper_label: 2step
+    description: Estimate importance weights first, then train the classifier.
+    ratio_model_training: jointly_train_h_and_v_on_eq19
+    ratio_model_training_source: mathematical_requirement_and_local_assumption
+    fixed_weight_protocol: materialize_source_example_weights_before_eq20
+    fixed_weight_protocol_source: paper
+    ratio_phase_max_epochs: 200
+    classifier_phase_max_epochs: 200
+    phase_length_source: local_assumption_paper_only_reports_maximum_200_epochs
+  without_importance_weight_correction:
+    paper_label: w/o IW-C
+    description: Disable absolute-value correction in importance-weight estimation.
+  without_classifier_loss_correction:
+    paper_label: w/o CL-C
+    description: Disable absolute-value correction in classifier learning.
+  without_both_corrections:
+    paper_label: w/o IWCL-C
+    description: Disable both corrections.
+
+reporting:
+  primary_metric: target_test_accuracy
+  aggregation: mean_and_standard_deviation_over_seeds
+  confidence_display: standard_error_for_figures
+  paired_test: paired_t_test
+  paired_test_alpha: 0.05
+  save_resolved_config: true
+  save_sample_indices: true
+  save_environment: true
+  save_device_metadata: true
+
+known_missing_details:
+  - official source code and exact implementation are proprietary
+  - identities of the ten paper seeds
+  - exact sampled examples and split-generation code
+  - dependency, PyTorch, CUDA, and cuDNN versions
+  - early-stopping patience and tie-breaking
+  - image preprocessing, normalization, and augmentation
+  - Adam betas, epsilon, weight decay, and initialization
+  - TableShift commit and exact preprocessing version
+  - exact GIW pseudo-label thresholding details
+  - exact RBF bandwidth rule for the MMD mixture

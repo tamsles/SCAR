@@ -1,0 +1,16 @@
+# Portable core environment for the image tasks and common experiment runner.
+# The paper does not publish exact package versions; these are engineering ranges.
+numpy>=1.23.5,<2
+pandas>=1.5,<3
+scipy>=1.10,<2
+scikit-learn>=1.2,<2
+PyYAML>=6,<7
+torch>=2.0,<3
+torchvision>=0.15,<1
+tqdm>=4.66,<5
+matplotlib>=3.7,<4
+seaborn>=0.12,<1
+
+# TableShift is intentionally an optional pyproject extra because its official
+# package pins a legacy NumPy/Ray stack. Use: python -m pip install -e ".[tabular]"
+

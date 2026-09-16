@@ -20,6 +20,13 @@ is a snapshot of its working files, including previously uncommitted experiment
 code; it is not a merge of that project's Git history. Its original README is
 retained for provenance and usage.
 
+## IWPU reproduction
+
+Added on 2026-09-16 in `legacy/IWPU/`: an independent from-paper IWPU
+reimplementation, including source, configs, runners, tests and cluster scripts.
+See its README for setup and its reproduction statement for assumptions.
+The original working directory is preserved; datasets and raw outputs are excluded.
+
 ## Running experiments
 
 Use the root README for current experiments. The legacy project has its own

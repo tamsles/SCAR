@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+data/*
+!data/.gitkeep
+results/
+reports/all_runs.csv
+reports/main_table.csv
+reports/completeness.csv
+reports/comparison_to_table5.csv
