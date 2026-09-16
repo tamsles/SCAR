@@ -10,3 +10,11 @@ logs/
 wisteria/generated/
 wisteria/generated_multigpu/
 wisteria/generated_next_round/
+
+# Local upload packages and credentials
+archives/
+.env
+.env.*
+!.env.example
+*.pem
+*.key

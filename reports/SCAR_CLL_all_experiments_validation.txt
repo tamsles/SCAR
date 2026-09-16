@@ -1,0 +1,7 @@
+B0: 60 records, successful status, no target-test selection.
+B1: 20 records, successful status, no target-test selection.
+B2: 57 records, successful status, no target-test selection.
+B3: 400 records, successful status, no target-test selection.
+B4: 100 records, successful status, no target-test selection.
+Original baseline, shift, architecture and Phase A aggregates independently checked.
+Legacy SCARCE: run 1 has 200 epochs; run 2 has 94; run-1 last-10 mean is 91.052%.
