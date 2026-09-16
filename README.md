@@ -1,4 +1,147 @@
-# Direct conditional density-ratio estimation for SCAR
+# SCAR: Complementary-Label Learning under Distribution Shift
+
+An archive of experiments on complementary-label learning under source/target
+distribution shift, including SCARCE baselines, dynamic importance weighting,
+conditional density-ratio estimation, and matched diagnostic experiments.
+Here, SCAR means **Selected Completely At Random**: a complementary label
+indicates a class that an example does **not** belong to.
+
+The repository contains the current research code and an earlier SCARCE working
+snapshot in [`legacy/SCARCE`](legacy/SCARCE). It preserves experimental methods
+and findings, including negative results; it does not claim that the proposed
+conditional estimators consistently outperform the baselines.
+
+## Start here
+
+- **Run a small synthetic example:** follow [Installation and quick start](#installation-and-quick-start).
+- **Explore the experimental stages:** see [Experiment map](#experiment-map).
+- **Read the results:** begin with the [complete experiment inventory](reports/SCAR_CLL_all_experiments_EN.md)
+  and [Phase B synthesis](reports/phase_b_summary.md).
+- **Run original SCARCE, DIW or ADIW:** use the [legacy README](legacy/SCARCE/README.md).
+- **Check what was archived:** see [EXPERIMENT_ARCHIVE.md](EXPERIMENT_ARCHIVE.md).
+
+## Installation and quick start
+
+Clone the repository using a GitHub account with access to it:
+
+```bash
+git clone https://github.com/tamsles/SCAR.git
+cd SCAR
+python -m venv .venv
+```
+
+Activate the environment on Linux/macOS:
+
+```bash
+source .venv/bin/activate
+```
+
+Or on Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Install the core dependencies and run the synthetic example on CPU:
+
+```bash
+python -m pip install -r requirements.txt
+python train.py --config configs/ratio_synthetic.json --device cpu
+```
+
+The core requirements are PyTorch, NumPy and Matplotlib. The image-data bridge
+and legacy experiments additionally use torchvision, SciPy and pandas:
+
+```bash
+python -m pip install torchvision scipy pandas
+```
+
+Use mutually compatible PyTorch/torchvision builds for your Python and CUDA
+environment. The repository records minimum dependency versions, not a locked
+environment; this archive has not been validated against every newer version.
+CVXOPT is optional for the legacy DIW solver; its `auto` setting can fall back
+to SciPy. Synthetic examples require no downloaded image dataset. Image
+experiments use the legacy data loaders and may download datasets on first use.
+
+Unless stated otherwise, run commands from the repository root. Multiline
+commands below use Bash continuation syntax; on PowerShell, put each command
+on one line or use PowerShell's continuation syntax.
+
+## Repository layout
+
+| Path | Purpose |
+| --- | --- |
+| `train.py`, `demo_synthetic.py` | Density-ratio training entry point and synthetic demo |
+| `models/`, `ratio_estimation/` | Backbones, ratio architectures, training and risk integration |
+| `datasets/`, `src/` | Synthetic data, calibration, diagnostics and weight interventions |
+| `experiments/`, `scripts/` | Experiment runners, analysis and report generation |
+| `configs/` | Synthetic, next-round and Phase B experiment settings |
+| `tests/` | Current project's unit and experiment tests |
+| `wisteria/` | Historical cluster submission and monitoring scripts |
+| `reports/`, `ABLATION_RESULTS.md` | Archived findings and experiment inventories |
+| `legacy/SCARCE/` | Earlier SCARCE, domain-shift baselines, DIW and ADIW implementation |
+
+## Experiment map
+
+| Stage | Question or comparison | Main entry point |
+| --- | --- | --- |
+| Legacy baselines | Original SCARCE, source-only, target-only, pooled SCAR, DIW and ADIW | [Legacy README](legacy/SCARCE/README.md) |
+| Synthetic ratio ablations | Conditioning, architecture, prior correction and branch balancing | `scripts/run_ratio_ablation.py`, `experiments/ablation.py` |
+| SCARCE bridge | Neural importance weights in the original classifier training path | `experiments/scarce_ratio_comparison.py` |
+| Matched next round / Phase A | Matched training conditions, capacity and ratio diagnostics | `scripts/run_next_round.py` |
+| B0 | ADIW pipeline and sample-weight causal interventions | `scripts/run_phase_b0.py` |
+| B1 | Ratio quality and residual source/target distinguishability | `scripts/run_phase_b1.py` |
+| B2 | Frozen-score clipping, normalization and calibration | `scripts/run_phase_b2.py` |
+| B3 | Gaussian benchmark with known ground-truth ratios | `scripts/run_phase_b3.py` |
+| B4 | Heterogeneous class-specific MNIST shifts | `scripts/run_phase_b4.py` |
+
+For bridge commands, use `--scarce-repo legacy/SCARCE`. For the Bash cluster
+launchers, set the bundled legacy path before running the commands below:
+
+```bash
+export SCARCE_REPO="$(pwd)/legacy/SCARCE"
+```
+
+Review `wisteria/config.sh` and the job templates before submission: project
+accounts, module names, resource limits and default paths reflect the original
+cluster environment and may need adjustment.
+
+## Results and interpretation
+
+The [complete inventory](reports/SCAR_CLL_all_experiments_EN.md) separates
+experimental batches, completed runs and missing comparisons. The historical
+name `ftSCAR` refers to pooled source/target training in these experiments;
+it must not be interpreted as source pretraining followed by target fine-tuning.
+
+The [Phase B report](reports/phase_b_summary.md) records 637 formal runs across
+B0–B4. Its findings include a substantial contribution from the matched ADIW
+training pipeline, saturation and clipping problems in the learned ratios, and
+no practical conditional-estimator advantage in the tested heterogeneous MNIST
+settings. These are archived, setting-specific findings, not newly rerun or
+universally applicable conclusions. See the individual reports for uncertainty,
+evaluation protocols and oracle-only diagnostics.
+
+## Reproducibility and archive scope
+
+Source code, configurations, tests, cluster scripts and written reports are
+included. Downloaded datasets, model checkpoints, raw result directories and
+runtime logs are excluded. Reproducing a result requires rerunning its matching
+configuration and seeds or supplying the original raw artifacts; the written
+reports alone are insufficient to regenerate every table.
+
+Some historical reports and PowerShell report builders retain machine-specific
+paths. The legacy Colab instructions refer to a notebook and ZIP bundle that are
+not included here. The legacy code snapshot comes from
+[wwangwitsel/SCARCE](https://github.com/wwangwitsel/SCARCE) with local experiment
+extensions; its DIW path references
+[TongtongFANG/DIW](https://github.com/TongtongFANG/DIW). Original documentation is
+retained in the legacy directory.
+
+The upload and README update do not constitute a fresh execution of the training
+experiments. Run the [tests](#tests) and a smoke experiment in your environment
+before launching a full matrix.
+
+## Conditional density-ratio estimator
 
 This repository implements a PyTorch density-ratio estimator for multiclass
 complementary-label learning under source/target distribution shift. It trains
@@ -154,6 +297,19 @@ automatically one. Count-based prior correction is used for unbalanced
 python -m unittest discover -s tests -v
 ```
 
+Run the legacy test suite separately from its own directory after installing
+the additional dependencies:
+
+```bash
+cd legacy/SCARCE
+python -m unittest discover -s tests -v
+cd ../..
+```
+
+The two projects use overlapping top-level module names, so keep their test
+discovery roots separate. The coverage described below refers to the current
+project's suite.
+
 Tests cover shapes, positivity/finite values, identical distributions, a known
 conditional shift, one-backbone-call vectorization, gradients, missing
 branches, prior correction, self-normalization, batch adaptation, and
@@ -218,7 +374,7 @@ ratio estimator and feed its `[B,q]` weights into the original
 
 ```bash
 python -m experiments.scarce_ratio_comparison \
-  --scarce-repo /path/to/SCARCE \
+  --scarce-repo legacy/SCARCE \
   --ratio-arch fusion \
   --dataset mnist \
   --shift rotation \
@@ -251,7 +407,7 @@ four GPUs per job. The multi-GPU launcher maps one independent
 matrix. It requests five four-GPU jobs, so no GPU is reserved without a task:
 
 ```bash
-SCARCE_REPO=/path/to/SCARCE \
+SCARCE_REPO="$(pwd)/legacy/SCARCE" \
 RUN_MODE=debug \
 bash wisteria/submit_scarce_ratio_multigpu.sh
 ```
@@ -267,7 +423,7 @@ After all 20 `.ok` files are present and no `.failed` file remains, submit the
 full 10/200-epoch experiment with the same GPU layout:
 
 ```bash
-SCARCE_REPO=/path/to/SCARCE \
+SCARCE_REPO="$(pwd)/legacy/SCARCE" \
 RUN_MODE=full \
 bash wisteria/submit_scarce_ratio_multigpu.sh
 ```
@@ -299,7 +455,7 @@ python scripts/run_next_round.py \
   --phase smoke \
   --experiment-mode smoke \
   --task-index 0 \
-  --scarce-repo /path/to/SCARCE \
+  --scarce-repo legacy/SCARCE \
   --results-root results/next_round_smoke \
   --device cuda
 ```
@@ -390,7 +546,8 @@ The audited code-path map is in `reports/phase_b_repository_audit.md`.
   the `(x, bar_y)` contract, and a custom backbone must return `[B,F]`.
 - MNIST, FashionMNIST, and CIFAR-10 classifier experiments use the existing
   SCARCE bridge (`--dataset mnist|fashionmnist|cifar10`), so that repository
-  must be provided with `--scarce-repo`. Its data module remains responsible
+  is bundled at `legacy/SCARCE` and must be selected with `--scarce-repo`.
+  Its data module remains responsible
   for the exact input-output-relation and support-shift implementations.
 - Source and target are forwarded separately, so each domain batch invokes the
   shared backbone once; there is never a per-class or per-state backbone call.
