@@ -1,4 +1,4 @@
-# SCAR
+# SCAR_with_DIW
 
 Experiment code for complementary-label learning under distribution shift.
 Includes SCARCE baselines, importance weighting, and conditional density-ratio estimation.
